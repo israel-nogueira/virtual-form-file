@@ -1,11 +1,11 @@
 # 📁 VirtualForm — Virtual File Upload Form
 
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.3-blue.svg)]()
 [![jsDelivr](https://img.shields.io/badge/CDN-jsDelivr-orange.svg)](https://www.jsdelivr.com/)
 [![Vanilla JS](https://img.shields.io/badge/Vanilla-JavaScript-yellow.svg)]()
 
-> Crie formulários de upload de arquivos virtuais (sem `<form>` no HTML) com suporte a thumbnails, captura mobile, múltiplos inputs e envio nativo.
+> Crie formulários de upload de arquivos virtuais (sem `<form>` no HTML) com suporte a thumbnails, qualidade por formato, transparência PNG/WebP, GIF animado e captura mobile.
 
 ---
 
@@ -14,6 +14,7 @@
 - [Sobre](#-sobre)
 - [Instalação](#-instalação)
 - [Início Rápido](#-início-rápido)
+- [Comportamento por Formato](#-comportamento-por-formato)
 - [API do Formulário](#-api-do-formulário-formupload)
 - [API do Input](#-api-do-input)
 - [Exemplos Completos](#-exemplos-completos)
@@ -21,9 +22,11 @@
   - [Múltiplos arquivos](#2-múltiplos-arquivos)
   - [Preview com createThumb](#3-preview-com-createthumb)
   - [Reduzir peso com replaceThumb](#4-reduzir-peso-com-replacethumb)
-  - [Câmera mobile](#5-captura-via-câmera-mobile)
-  - [Múltiplos inputs no mesmo form](#6-múltiplos-inputs-no-mesmo-formulário)
-  - [Envio via fetch (AJAX)](#7-envio-via-fetch-ajax)
+  - [Transparência PNG](#5-transparência-png)
+  - [GIF animado](#6-gif-animado)
+  - [Câmera mobile](#7-captura-via-câmera-mobile)
+  - [Múltiplos inputs](#8-múltiplos-inputs-no-mesmo-formulário)
+  - [Envio via fetch](#9-envio-via-fetch-ajax)
 - [Referência Rápida](#-referência-rápida)
 - [Licença](#-licença)
 
@@ -38,9 +41,13 @@
 - ✅ Suporte a múltiplos arquivos
 - ✅ `createThumb` — gera thumbnail em qualquer tamanho sem alterar o form
 - ✅ `replaceThumb` — substitui o arquivo no form pelo redimensionado
+- ✅ Parâmetro `quality` (0–100) normalizado por formato automaticamente
+- ✅ Transparência preservada em PNG e WebP
+- ✅ GIF animado mantido sem alterações
+- ✅ GIF estático convertido para PNG (preserva transparência)
+- ✅ Extensão do arquivo atualizada automaticamente no `replaceThumb`
 - ✅ Modo proporcional (altura automática quando `h = 0`)
 - ✅ Crop centralizado automático para tamanhos fixos
-- ✅ Conversão para Base64
 - ✅ Captura via câmera em dispositivos móveis
 - ✅ Múltiplos inputs no mesmo formulário virtual
 - ✅ Envio nativo ou via `fetch`/AJAX
@@ -56,8 +63,6 @@
 ```
 
 ### Download manual
-
-Baixe o arquivo [`virtual-form-file.js`](./virtual-form-file.js) e inclua no seu projeto:
 
 ```html
 <script src="./virtual-form-file.js"></script>
@@ -75,35 +80,31 @@ Baixe o arquivo [`virtual-form-file.js`](./virtual-form-file.js) e inclua no seu
     <title>VirtualForm</title>
 </head>
 <body>
-
-    <button id="btn-upload">Selecionar Imagem</button>
-    <img id="preview-grande"  style="max-width:300px; display:none;" />
-    <img id="preview-pequeno" style="max-width:100px; display:none;" />
+    <button id="btn">Selecionar Imagem</button>
+    <img id="preview" style="max-width:400px; display:none;" />
 
     <script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file/virtual-form-file.js"></script>
     <script>
         const form  = new FormUpload();
         const input = form.setInput('foto');
 
-        input.accept('image/jpeg, image/png, image/webp');
+        form.setAction('/api/upload');
+        input.accept('image/jpeg, image/png, image/webp, image/gif');
 
         input.on('change', async function () {
 
-            // Preview grande (300x300 com crop central)
-            const thumb300 = await input.createThumb(0, 300, 300);
-            document.getElementById('preview-grande').src = thumb300;
-            document.getElementById('preview-grande').style.display = 'block';
+            // Preview sem alterar o arquivo
+            const preview = await input.createThumb(0, 800, 0, 90);
+            document.getElementById('preview').src = preview;
+            document.getElementById('preview').style.display = 'block';
 
-            // Preview pequeno (100x100 com crop central)
-            const thumb100 = await input.createThumb(0, 100, 100);
-            document.getElementById('preview-pequeno').src = thumb100;
-            document.getElementById('preview-pequeno').style.display = 'block';
+            // Reduz o arquivo antes de enviar (mantém formato e transparência)
+            await input.replaceThumb(0, 1200, 0, 85);
 
-            // Substitui o arquivo no form por uma versão menor antes de enviar
-            await input.replaceThumb(0, 1200, 0); // 1200px de largura, altura proporcional
+            form.submit();
         });
 
-        document.getElementById('btn-upload').addEventListener('click', () => input.click());
+        document.getElementById('btn').addEventListener('click', () => input.click());
     </script>
 </body>
 </html>
@@ -111,9 +112,22 @@ Baixe o arquivo [`virtual-form-file.js`](./virtual-form-file.js) e inclua no seu
 
 ---
 
-## 🗂 API do Formulário (`FormUpload`)
+## 🎨 Comportamento por Formato
 
-Instancie o formulário virtual com `new FormUpload()`.
+| Formato | `quality` | Transparência | Redimensionamento |
+|---|---|---|---|
+| **JPEG** | ✅ `50% → 0.5` | ❌ fundo branco | ✅ crop ou proporcional |
+| **PNG** | ⚠️ ignorado (sempre lossless) | ✅ preservada | ✅ crop ou proporcional |
+| **WebP** | ✅ `50% → 0.5` | ✅ preservada | ✅ crop ou proporcional |
+| **GIF estático** | ⚠️ ignorado | ✅ preservada (converte para PNG) | ✅ crop ou proporcional |
+| **GIF animado** | ❌ não aplicável | ✅ mantido original | ❌ não redimensionado |
+
+> **Nota:** O parâmetro `quality` usa escala de **0 a 100** em todos os casos.
+> Internamente, JPEG e WebP convertem para `0.0–1.0`. PNG é lossless no canvas do browser e ignora o valor — um aviso é exibido no console caso seja informado.
+
+---
+
+## 🗂 API do Formulário (`FormUpload`)
 
 | Método | Retorno | Descrição |
 |---|---|---|
@@ -131,8 +145,6 @@ Instancie o formulário virtual com `new FormUpload()`.
 ---
 
 ## 🎛 API do Input
-
-Retornado por `form.setInput(name)` ou `form.getInput(name)`.
 
 ### Configuração
 
@@ -156,15 +168,18 @@ Retornado por `form.setInput(name)` ou `form.getInput(name)`.
 | Método | Retorno | Descrição |
 |---|---|---|
 | `getFiles()` | `FileList` | Retorna a lista de arquivos selecionados |
-| `getBase64(file)` | `Promise<string>` | Converte um `File` para base64 (jpeg, png, gif, webp) |
+| `getBase64(file)` | `Promise<string>` | Converte um `File` para base64 |
 
 ### Thumbnails
 
 | Método | Parâmetros | Retorno | Descrição |
 |---|---|---|---|
-| `createThumb(index, w, h)` | índice, largura, altura | `Promise<string>` | Gera thumbnail em base64. **Não altera o form.** Se `h = 0`, altura proporcional. |
-| `replaceThumb(index, w, h)` | índice, largura, altura | `Promise<FileList>` | Substitui o arquivo no input pelo redimensionado. Se `h = 0`, altura proporcional. |
-| `base64ToBlob(base64, file)` | base64, File original | `Promise<File>` | Converte base64 de volta para objeto `File` |
+| `createThumb(index, w, h, quality?)` | índice, largura, altura, qualidade 0–100 | `Promise<string>` | Gera thumbnail em base64. **Não altera o form.** |
+| `replaceThumb(index, w, h, quality?)` | índice, largura, altura, qualidade 0–100 | `Promise<FileList>` | Substitui o arquivo no input pelo redimensionado. |
+| `base64ToBlob(base64, file, mime)` | base64, File original, mimeType | `Promise<File>` | Converte base64 para objeto `File` |
+
+> `h = 0` em `createThumb` e `replaceThumb` → altura calculada proporcionalmente à largura (sem crop).
+> `quality` é opcional. Default: `100`.
 
 ### Propriedade
 
@@ -185,10 +200,7 @@ const input = form.setInput('documento');
 form.setAction('/api/upload');
 input.accept('application/pdf');
 
-input.on('change', function () {
-    form.submit();
-});
-
+input.on('change', () => form.submit());
 input.click();
 ```
 
@@ -200,9 +212,7 @@ input.click();
 const form  = new FormUpload();
 const input = form.setInput('fotos');
 
-input
-    .multiple(true)
-    .accept('image/jpeg, image/png, image/webp');
+input.multiple(true).accept('image/jpeg, image/png, image/webp');
 
 input.on('change', function () {
     Array.from(input.getFiles()).forEach((file, i) => {
@@ -217,22 +227,22 @@ input.click();
 
 ### 3. Preview com `createThumb`
 
-Use `createThumb` para gerar thumbnails em **qualquer tamanho** sem alterar o arquivo que será enviado. Você pode gerar quantas quiser ao mesmo tempo.
+Gera thumbnails em diferentes tamanhos sem alterar o arquivo que será enviado.
 
 ```javascript
 const form  = new FormUpload();
 const input = form.setInput('imagem');
 
-input.accept('image/jpeg, image/png, image/webp');
+input.accept('image/jpeg, image/png, image/webp, image/gif');
 
 input.on('change', async function () {
 
     // Tamanho fixo com crop central
-    const thumb300 = await input.createThumb(0, 300, 300);
-    const thumb100 = await input.createThumb(0, 100, 100);
+    const thumb300 = await input.createThumb(0, 300, 300, 85);
+    const thumb100 = await input.createThumb(0, 100, 100, 85);
 
-    // Largura fixa com altura proporcional (sem crop)
-    const preview  = await input.createThumb(0, 1000, 0);
+    // Largura fixa, altura proporcional (sem crop)
+    const preview  = await input.createThumb(0, 1000, 0, 90);
 
     document.getElementById('thumb-300').src = thumb300;
     document.getElementById('thumb-100').src = thumb100;
@@ -242,18 +252,11 @@ input.on('change', async function () {
 input.click();
 ```
 
-```html
-<img id="thumb-300" style="max-width:300px" />
-<img id="thumb-100" style="max-width:100px" />
-<img id="preview"   style="max-width:100%" />
-<button onclick="input.click()">Escolher imagem</button>
-```
-
 ---
 
 ### 4. Reduzir peso com `replaceThumb`
 
-Use `replaceThumb` para substituir o arquivo no formulário por uma versão redimensionada antes de enviar, reduzindo o tamanho do upload.
+Substitui o arquivo no formulário por uma versão menor antes de enviar.
 
 ```javascript
 const form  = new FormUpload();
@@ -264,15 +267,12 @@ input.accept('image/jpeg, image/png, image/webp');
 
 input.on('change', async function () {
 
-    // Exibe preview sem alterar o arquivo
-    const preview = await input.createThumb(0, 400, 0);
+    // Preview sem alterar o arquivo
+    const preview = await input.createThumb(0, 400, 0, 90);
     document.getElementById('preview').src = preview;
 
-    // Substitui o arquivo no form: máximo 1200px de largura, altura proporcional
-    await input.replaceThumb(0, 1200, 0);
-
-    // Ou com crop fixo 800x800
-    // await input.replaceThumb(0, 800, 800);
+    // Reduz para 1200px de largura, 85% qualidade, mantém formato e transparência
+    await input.replaceThumb(0, 1200, 0, 85);
 
     form.submit();
 });
@@ -282,46 +282,97 @@ input.click();
 
 ---
 
-### 5. Captura via câmera mobile
+### 5. Transparência PNG
+
+PNG com fundo transparente é preservado automaticamente em `createThumb` e `replaceThumb`.
+
+```javascript
+const form  = new FormUpload();
+const input = form.setInput('logo');
+
+input.accept('image/png');
+
+input.on('change', async function () {
+
+    // Transparência preservada — sem fundo branco
+    const thumb = await input.createThumb(0, 200, 200);
+    document.getElementById('preview').src = thumb;
+
+    // Substitui o arquivo mantendo transparência e extensão .png
+    await input.replaceThumb(0, 800, 800);
+
+    form.submit();
+});
+
+input.click();
+```
+
+> **Nota:** JPEG não suporta transparência. Ao processar um JPEG, o fundo é preenchido com branco automaticamente.
+
+---
+
+### 6. GIF animado
+
+GIF animado é detectado automaticamente e mantido sem alterações.
+
+```javascript
+const form  = new FormUpload();
+const input = form.setInput('gif');
+
+input.accept('image/gif');
+
+input.on('change', async function () {
+
+    // GIF animado → retorna o base64 original sem redimensionar
+    const preview = await input.createThumb(0, 300, 300);
+    document.getElementById('preview').src = preview;
+
+    // GIF animado → nenhuma substituição ocorre, arquivo original é mantido
+    await input.replaceThumb(0, 800, 0);
+    // Console: [VirtualForm] "animacao.gif" é um GIF animado e foi mantido sem alterações.
+
+    form.submit();
+});
+
+input.click();
+```
+
+---
+
+### 7. Captura via câmera mobile
 
 ```javascript
 const form  = new FormUpload();
 const input = form.setInput('selfie');
 
-input
-    .accept('image/*')
-    .capture('user'); // 'user' = frontal | 'environment' = traseira
+input.accept('image/*').capture('user'); // 'user' = frontal | 'environment' = traseira
 
 input.on('change', async function () {
-    const thumb = await input.createThumb(0, 200, 200);
-    document.getElementById('preview').src = thumb;
+    const thumb = await input.createThumb(0, 200, 200, 85);
+    document.getElementById('avatar').src = thumb;
 });
 
-document.getElementById('btn-camera').addEventListener('click', () => {
-    input.click(); // abre a câmera diretamente em mobile
-});
+document.getElementById('btn-camera').addEventListener('click', () => input.click());
 ```
 
 ---
 
-### 6. Múltiplos inputs no mesmo formulário
+### 8. Múltiplos inputs no mesmo formulário
 
 ```javascript
 const form = new FormUpload();
 form.setAction('/api/cadastro');
 
-// Input de foto de perfil
 const inputFoto = form.setInput('foto_perfil');
-inputFoto.accept('image/jpeg, image/png');
+inputFoto.accept('image/jpeg, image/png, image/webp');
 
-// Input de documentos PDF
 const inputDoc = form.setInput('documentos');
 inputDoc.multiple(true).accept('application/pdf');
 
 inputFoto.on('change', async function () {
-    const thumb = await inputFoto.createThumb(0, 100, 100);
-    document.getElementById('preview-avatar').src = thumb;
-    await inputFoto.replaceThumb(0, 800, 800); // reduz antes de enviar
+    const thumb = await inputFoto.createThumb(0, 100, 100, 85);
+    document.getElementById('avatar').src = thumb;
+    await inputFoto.replaceThumb(0, 800, 800, 85);
 });
 
 inputDoc.on('change', function () {
@@ -329,36 +380,30 @@ inputDoc.on('change', function () {
 });
 
 document.getElementById('btn-enviar').addEventListener('click', () => {
-    // Retorna todos os arquivos: { foto_perfil: [File], documentos: [File, ...] }
-    console.log(form.getAllFiles());
+    console.log(form.getAllFiles()); // { foto_perfil: [File], documentos: [File, ...] }
     form.submit();
 });
 ```
 
 ---
 
-### 7. Envio via fetch (AJAX)
+### 9. Envio via fetch (AJAX)
 
 ```javascript
 const form  = new FormUpload();
 const input = form.setInput('arquivo');
 
-input.accept('image/jpeg, image/png, image/webp');
+input.accept('image/jpeg, image/png, image/webp, image/gif');
 
 input.on('change', async function () {
 
-    // Reduz o arquivo para no máximo 1200px antes de enviar
-    await input.replaceThumb(0, 1200, 0);
+    await input.replaceThumb(0, 1200, 0, 85);
 
-    // Monta o FormData a partir do form virtual
     const formData = new FormData(form.getForm());
 
     try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
-        const result = await response.json();
+        const response = await fetch('/api/upload', { method: 'POST', body: formData });
+        const result   = await response.json();
         console.log('Sucesso:', result);
         form.clearInputs();
     } catch (error) {
@@ -366,7 +411,7 @@ input.on('change', async function () {
     }
 });
 
-document.getElementById('btn-upload').addEventListener('click', () => input.click());
+document.getElementById('btn').addEventListener('click', () => input.click());
 ```
 
 ---
@@ -374,45 +419,36 @@ document.getElementById('btn-upload').addEventListener('click', () => input.clic
 ## 📌 Referência Rápida
 
 ```javascript
-// Instância
-const form = new FormUpload();
-
-// Configuração do form
-form.setAction('/api/upload');
-form.setEnctype('multipart/form-data');
-
-// Criação e configuração do input
+const form  = new FormUpload();
 const input = form.setInput('campo');
-input.multiple(true);
-input.accept('image/jpeg, image/png, image/webp');
-input.capture('environment'); // mobile: câmera traseira
+
+// Configuração
+form.setAction('/api/upload');
+input.multiple(true).accept('image/jpeg, image/png, image/webp, image/gif');
+input.capture('environment'); // mobile
 
 // Abrir seletor
 input.click();
 
-// Evento de seleção
+// Evento
 input.on('change', async () => {
 
-    const files  = input.getFiles();        // FileList
-    const base64 = await input.getBase64(files[0]); // string base64
+    // createThumb(index, w, h, quality?) → base64, não altera o form
+    const thumb300 = await input.createThumb(0, 300, 300, 85); // crop, 85%
+    const thumb100 = await input.createThumb(0, 100, 100, 85); // crop, 85%
+    const preview  = await input.createThumb(0, 1000, 0, 90);  // proporcional, 90%
 
-    // createThumb → só retorna base64, não altera o form
-    const thumb300 = await input.createThumb(0, 300, 300); // crop 300x300
-    const thumb100 = await input.createThumb(0, 100, 100); // crop 100x100
-    const maxSize  = await input.createThumb(0, 1000, 0);  // 1000px, proporcional
-
-    // replaceThumb → substitui o arquivo no input
-    await input.replaceThumb(0, 1200, 0);  // 1200px, proporcional
-    await input.replaceThumb(0, 800, 800); // crop 800x800
+    // replaceThumb(index, w, h, quality?) → substitui no form
+    await input.replaceThumb(0, 1200, 0, 85);  // proporcional, 85%
+    await input.replaceThumb(0, 800, 800, 85); // crop, 85%
 });
 
-// Envio e utilitários
+// Utilitários
 form.submit();
-form.clearInputs();     // limpa valores
-form.reset();           // remove inputs e reinicia
-form.getAllFiles();      // { campo: [File, ...] }
-form.getForm();         // HTMLFormElement
-form.getInput('campo'); // recupera inputObject pelo name
+form.clearInputs();
+form.reset();
+form.getAllFiles(); // { campo: [File, ...] }
+form.getForm();    // HTMLFormElement
 ```
 
 ---

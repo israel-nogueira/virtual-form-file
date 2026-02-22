@@ -4,7 +4,7 @@
  * Autor: Israel Nogueira
  * Data de Criação: 23/05/2024
  * Última Modificação: 2025
- * Versão: 1.2
+ * Versão: 1.3
  * Licença: MIT
  * GitHub: https://github.com/israel-nogueira/virtual-form-file
  */
@@ -14,76 +14,36 @@
 	// EXEMPLOS DE USO
 	// -------------------------------------------------------
 
-	// Inicia o formulário
-	const formDocumentos = new FormUpload();
+	const form  = new FormUpload();
+	const input = form.setInput('foto');
 
-	// Define action e enctype (opcionais)
-	formDocumentos.setAction('/api/upload');
-	formDocumentos.setEnctype('multipart/form-data');
+	form.setAction('/api/upload');
+	input.accept('image/jpeg, image/png, image/webp, image/gif');
 
-	// Cria um input com o name "documentos"
-	const inputDocs = formDocumentos.setInput('documentos');
+	input.on('change', async function () {
 
-	// Aceita múltiplos arquivos
-	inputDocs.multiple(true);
+		// createThumb(index, w, h, quality%)
+		//   Retorna base64 sem alterar o arquivo no form.
+		//   Se h = 0, altura proporcional à largura.
+		//   quality: 0–100. JPEG/WebP convertem para 0.0–1.0.
+		//            PNG ignora (sempre lossless). GIF animado retorna o original.
 
-	// Define tipos de arquivo aceitos
-	inputDocs.accept('image/jpeg, image/png, image/webp');
+		const thumb300 = await input.createThumb(0, 300, 300, 85); // crop 300x300, 85% qualidade
+		const thumb100 = await input.createThumb(0, 100, 100, 85); // crop 100x100, 85% qualidade
+		const maxSize  = await input.createThumb(0, 1000, 0, 90);  // 1000px largura, proporcional
 
-	// Ativa câmera mobile
-	// 'user'        → câmera frontal
-	// 'environment' → câmera traseira
-	inputDocs.capture('environment');
+		document.getElementById('preview').src = maxSize;
 
-	// Ao selecionar arquivo(s)
-	inputDocs.on('change', async function () {
+		// replaceThumb(index, w, h, quality%)
+		//   Substitui o arquivo no input pelo redimensionado.
+		//   GIF animado é mantido sem alterações.
 
-		// Lista de arquivos selecionados
-		const files = inputDocs.getFiles();
+		await input.replaceThumb(0, 1200, 0, 90); // reduz para 1200px antes de enviar
 
-		// -------------------------------------------------------
-		// createThumb(index, w, h)
-		//   Gera uma thumbnail e retorna em base64.
-		//   Não altera o arquivo no formulário.
-		//   Se h = 0, a altura é calculada proporcionalmente.
-		// -------------------------------------------------------
-		const thumb300 = await inputDocs.createThumb(0, 300, 300); // 300x300 crop central
-		const thumb100 = await inputDocs.createThumb(0, 100, 100); // 100x100 crop central
-		const maxSize  = await inputDocs.createThumb(0, 1000, 0);  // 1000px largura, altura proporcional
-
-		// Exibe previews
-		document.getElementById('preview-grande').src  = thumb300;
-		document.getElementById('preview-pequeno').src = thumb100;
-
-		// -------------------------------------------------------
-		// replaceThumb(index, w, h)
-		//   Redimensiona a imagem E substitui o arquivo no input.
-		//   Ideal para reduzir peso antes de enviar ao servidor.
-		//   Se h = 0, a altura é calculada proporcionalmente.
-		// -------------------------------------------------------
-		await inputDocs.replaceThumb(0, 1000, 0); // substitui pelo arquivo com 1000px de largura
-
-		// Envia o formulário
-		// formDocumentos.submit();
-
-		// Limpa os campos
-		// formDocumentos.clearInputs();
-
-		// Remove todos os inputs e reseta o formulário
-		// formDocumentos.reset();
+		form.submit();
 	});
 
-	// Abre o seletor de arquivos
-	inputDocs.click();
-
-	// Recupera um input já criado pelo name
-	const input    = formDocumentos.getInput('documentos');
-
-	// Retorna todos os arquivos de todos os inputs: { documentos: [File, ...] }
-	const allFiles = formDocumentos.getAllFiles();
-
-	// Retorna o elemento <form> virtual
-	const domForm  = formDocumentos.getForm();
+	input.click();
 */
 
 class FormUpload {
@@ -102,7 +62,7 @@ class FormUpload {
 
 	/**
 	 * Cria um novo input de arquivo e o registra no formulário.
-	 * @param {string} name  Atributo name do input
+	 * @param {string} name
 	 * @returns {inputObject}
 	 */
 	setInput(name) {
@@ -162,7 +122,7 @@ class FormUpload {
 
 	/**
 	 * Define o atributo action do formulário.
-	 * @param {string} action  URL de destino do upload
+	 * @param {string} action
 	 * @returns {this}
 	 */
 	setAction(action) {
@@ -229,7 +189,7 @@ class FormUpload {
 
 			/**
 			 * Adiciona um listener de evento no input.
-			 * @param {string} event     Ex: 'change'
+			 * @param {string} event
 			 * @param {Function} handler
 			 * @returns {inputObject}
 			 */
@@ -304,8 +264,56 @@ class FormUpload {
 			},
 
 			// -------------------------------------------------------
-			// CONVERSÃO
+			// HELPERS INTERNOS
 			// -------------------------------------------------------
+
+			/**
+			 * Detecta o formato de saída correto (mimeType) com base na extensão do arquivo.
+			 * GIF animado retorna null — sinal para manter o arquivo original.
+			 * GIF estático é convertido para PNG (preserva transparência).
+			 *
+			 * @param {File} file
+			 * @returns {Promise<string|null>}
+			 *   'image/jpeg' | 'image/png' | 'image/webp' | null (GIF animado)
+			 */
+			_detectMime: (file) => {
+				return new Promise((resolve) => {
+					const ext = file.name.split('.').pop().toLowerCase();
+
+					// GIF: verifica se é animado lendo os frames do binário
+					if (ext === 'gif') {
+						const reader = new FileReader();
+						reader.onload = (e) => {
+							const arr    = new Uint8Array(e.target.result);
+							let frames   = 0;
+
+							// Percorre os bytes procurando o marcador de frame GIF (0x00 0x21 0xF9 0x04)
+							for (let i = 0; i < arr.length - 3; i++) {
+								if (arr[i] === 0x00 && arr[i+1] === 0x21 && arr[i+2] === 0xF9 && arr[i+3] === 0x04) {
+									frames++;
+									if (frames > 1) break;
+								}
+							}
+
+							// Animado → retorna null (manter original)
+							// Estático → converte para PNG
+							resolve(frames > 1 ? null : 'image/png');
+						};
+						reader.readAsArrayBuffer(file);
+						return;
+					}
+
+					// Mapeamento de extensão → MIME
+					const map = {
+						jpg:  'image/jpeg',
+						jpeg: 'image/jpeg',
+						png:  'image/png',
+						webp: 'image/webp',
+					};
+
+					resolve(map[ext] || 'image/jpeg');
+				});
+			},
 
 			/**
 			 * Converte um File de imagem para string base64.
@@ -326,23 +334,62 @@ class FormUpload {
 			},
 
 			/**
+			 * Normaliza o valor de quality (0–100) para o range esperado por cada formato:
+			 *   JPEG / WebP → 0.0 a 1.0    (ex: 85% → 0.85)
+			 *   PNG         → ignorado pelo canvas do browser (sempre lossless)
+			 *
+			 * @param {number} qualityPercent  Valor de 0 a 100
+			 * @param {string} mimeType
+			 * @returns {number|undefined}
+			 */
+			_normalizeQuality: (qualityPercent, mimeType) => {
+				if (mimeType === 'image/jpeg' || mimeType === 'image/webp') {
+					// Garante que o valor está entre 0 e 100 antes de converter
+					const clamped = Math.min(100, Math.max(0, qualityPercent));
+					return clamped / 100;
+				}
+
+				// PNG: canvas não suporta parâmetro de compressão — sempre lossless
+				if (mimeType === 'image/png') {
+					if (qualityPercent !== undefined && qualityPercent !== null) {
+						console.warn('[VirtualForm] PNG é sempre lossless no canvas do browser. O parâmetro quality é ignorado.');
+					}
+					return undefined;
+				}
+
+				return undefined;
+			},
+
+			/**
 			 * Converte uma string base64 de volta para um objeto File.
-			 * Mantém o nome original do arquivo.
+			 * Mantém o nome original do arquivo, ajustando a extensão conforme o mimeType de saída.
+			 *
 			 * @param {string} base64        String base64 da imagem
 			 * @param {File}   originalFile  Arquivo original (usado para preservar o nome)
+			 * @param {string} mimeType      MIME type de saída
 			 * @returns {Promise<File>}
 			 */
-			base64ToBlob: (base64, originalFile) => {
+			base64ToBlob: (base64, originalFile, mimeType) => {
 				return new Promise((resolve, reject) => {
 					try {
+						// Extensão correta para o formato de saída
+						const extMap = {
+							'image/jpeg': 'jpg',
+							'image/png':  'png',
+							'image/webp': 'webp',
+						};
+						const newExt  = extMap[mimeType] || 'jpg';
+						const newName = originalFile.name.replace(/\.[^/.]+$/, '') + '.' + newExt;
+
 						const byteString = atob(base64.split(",")[1]);
 						const ab         = new ArrayBuffer(byteString.length);
 						const ia         = new Uint8Array(ab);
 						for (let i = 0; i < byteString.length; i++) {
 							ia[i] = byteString.charCodeAt(i);
 						}
-						const blob = new Blob([ab], { type: "image/jpeg" });
-						resolve(new File([blob], originalFile.name, { type: "image/jpeg" }));
+
+						const blob = new Blob([ab], { type: mimeType });
+						resolve(new File([blob], newName, { type: mimeType }));
 					} catch (error) {
 						reject(error);
 					}
@@ -355,26 +402,41 @@ class FormUpload {
 
 			/**
 			 * Gera uma thumbnail redimensionada e retorna em base64.
-			 * Não altera o arquivo no formulário — apenas visualização.
+			 * Não altera o arquivo no formulário — apenas visualização/preview.
 			 *
-			 * Modos:
+			 * Comportamento por formato:
+			 *   JPEG  → redimensiona, quality 0–100 aplicado (converte para 0.0–1.0)
+			 *   WebP  → redimensiona, quality 0–100 aplicado (converte para 0.0–1.0), preserva transparência
+			 *   PNG   → redimensiona, lossless, quality ignorado, preserva transparência
+			 *   GIF estático  → converte para PNG, preserva transparência
+			 *   GIF animado   → retorna o base64 original sem redimensionar
+			 *
+			 * Modos de redimensionamento:
 			 *   - w e h definidos → crop centralizado para encaixar exatamente em w x h
 			 *   - h = 0           → redimensiona pela largura, altura proporcional (sem crop)
 			 *
-			 * @param {number} index  Índice do arquivo na FileList
-			 * @param {number} w      Largura desejada em pixels
-			 * @param {number} h      Altura desejada em pixels. Se 0, calculada proporcionalmente.
-			 * @returns {Promise<string>} base64 JPEG da thumbnail gerada
+			 * @param {number} index    Índice do arquivo na FileList
+			 * @param {number} w        Largura desejada em pixels
+			 * @param {number} h        Altura desejada em pixels. Se 0, calculada proporcionalmente.
+			 * @param {number} quality  Qualidade de 0 a 100 (JPEG/WebP). PNG ignora. Default: 100.
+			 * @returns {Promise<string>} base64 da thumbnail gerada
 			 *
 			 * @example
-			 * const thumb300 = await input.createThumb(0, 300, 300); // 300x300 crop central
-			 * const thumb100 = await input.createThumb(0, 100, 100); // 100x100 crop central
-			 * const preview  = await input.createThumb(0, 1000, 0);  // 1000px largura, proporcional
+			 * const thumb = await input.createThumb(0, 300, 300, 85); // crop 300x300, 85% qualidade
+			 * const prev  = await input.createThumb(0, 1000, 0);      // 1000px largura, proporcional
 			 */
-			createThumb: (index, w, h) => {
+			createThumb: (index, w, h, quality = 100) => {
 				return new Promise(async (resolve, reject) => {
 					try {
-						const file   = inputElement.files[index];
+						const file     = inputElement.files[index];
+						const mimeType = await inputObject._detectMime(file);
+
+						// GIF animado → retorna o arquivo original sem alterar
+						if (mimeType === null) {
+							const base64 = await inputObject.getBase64(file);
+							return resolve(base64);
+						}
+
 						const base64 = await inputObject.getBase64(file);
 						const img    = new Image();
 
@@ -383,14 +445,28 @@ class FormUpload {
 							const canvas = document.createElement("canvas");
 							const ctx    = canvas.getContext("2d");
 
+							// Preserva transparência: não preenche fundo (padrão é transparente)
+							// JPEG não suporta transparência — preenche com branco
+							if (mimeType === 'image/jpeg') {
+								if (h === 0) {
+									canvas.width  = w;
+									canvas.height = Math.round(img.height * (w / img.width));
+								} else {
+									canvas.width  = w;
+									canvas.height = h;
+								}
+								ctx.fillStyle = '#FFFFFF';
+								ctx.fillRect(0, 0, canvas.width, canvas.height);
+							}
+
 							if (h === 0) {
-								// Modo proporcional: redimensiona pela largura
+								// Modo proporcional: redimensiona pela largura, sem crop
 								canvas.width  = w;
 								canvas.height = Math.round(img.height * (w / img.width));
 								ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
 							} else {
-								// Modo fixo: crop centralizado para encaixar em w x h
+								// Modo fixo: crop centralizado para encaixar exatamente em w x h
 								const aspectRatio      = img.width / img.height;
 								const thumbAspectRatio = w / h;
 								let cropWidth, cropHeight;
@@ -411,7 +487,10 @@ class FormUpload {
 								ctx.drawImage(img, offsetX, offsetY, cropWidth, cropHeight, 0, 0, w, h);
 							}
 
-							resolve(canvas.toDataURL("image/jpeg"));
+							// Normaliza quality para o range do formato
+							const normalizedQuality = inputObject._normalizeQuality(quality, mimeType);
+
+							resolve(canvas.toDataURL(mimeType, normalizedQuality));
 						};
 
 						img.src = base64;
@@ -425,25 +504,33 @@ class FormUpload {
 			 * Gera uma thumbnail e substitui o arquivo original no input pela versão redimensionada.
 			 * Ideal para reduzir o peso do arquivo antes de enviar ao servidor.
 			 *
-			 * Modos:
-			 *   - w e h definidos → crop centralizado para encaixar exatamente em w x h
-			 *   - h = 0           → redimensiona pela largura, altura proporcional (sem crop)
+			 * GIF animado é mantido sem qualquer alteração.
+			 * A extensão do arquivo é atualizada conforme o formato de saída.
 			 *
-			 * @param {number} index  Índice do arquivo na FileList
-			 * @param {number} w      Largura desejada em pixels
-			 * @param {number} h      Altura desejada em pixels. Se 0, calculada proporcionalmente.
+			 * @param {number} index    Índice do arquivo na FileList
+			 * @param {number} w        Largura desejada em pixels
+			 * @param {number} h        Altura desejada em pixels. Se 0, calculada proporcionalmente.
+			 * @param {number} quality  Qualidade de 0 a 100 (JPEG/WebP). PNG ignora. Default: 100.
 			 * @returns {Promise<FileList>} FileList atualizado após a substituição
 			 *
 			 * @example
-			 * await input.replaceThumb(0, 1000, 0); // substitui pelo arquivo redimensionado para 1000px de largura
-			 * await input.replaceThumb(0, 800, 800); // substitui pelo arquivo com crop 800x800
+			 * await input.replaceThumb(0, 1200, 0, 90);  // 1200px largura, 90% qualidade
+			 * await input.replaceThumb(0, 800, 800, 85); // crop 800x800, 85% qualidade
 			 */
-			replaceThumb: (index, w, h) => {
+			replaceThumb: (index, w, h, quality = 100) => {
 				return new Promise(async (resolve, reject) => {
 					try {
-						const file    = inputElement.files[index];
-						const thumb   = await inputObject.createThumb(index, w, h);
-						const newFile = await inputObject.base64ToBlob(thumb, file);
+						const file     = inputElement.files[index];
+						const mimeType = await inputObject._detectMime(file);
+
+						// GIF animado → mantém o arquivo original sem alterar
+						if (mimeType === null) {
+							console.info(`[VirtualForm] "${file.name}" é um GIF animado e foi mantido sem alterações.`);
+							return resolve(inputElement.files);
+						}
+
+						const thumb   = await inputObject.createThumb(index, w, h, quality);
+						const newFile = await inputObject.base64ToBlob(thumb, file, mimeType);
 
 						const dataTransfer = new DataTransfer();
 						Array.from(inputElement.files).forEach(f => {

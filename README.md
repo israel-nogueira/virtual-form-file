@@ -56,7 +56,13 @@
 
 ## 📦 Instalação
 
-### Via CDN (jsDelivr)
+### Via CDN (jsDelivr) — versão estável
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file@v1.3/virtual-form-file.js"></script>
+```
+
+### Via CDN (jsDelivr) — sempre a última versão
 
 ```html
 <script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file/virtual-form-file.js"></script>
@@ -83,7 +89,7 @@
     <button id="btn">Selecionar Imagem</button>
     <img id="preview" style="max-width:400px; display:none;" />
 
-    <script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file/virtual-form-file.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file@v1.3/virtual-form-file.js"></script>
     <script>
         const form  = new FormUpload();
         const input = form.setInput('foto');
@@ -298,7 +304,7 @@ input.on('change', async function () {
     const thumb = await input.createThumb(0, 200, 200);
     document.getElementById('preview').src = thumb;
 
-    // Substitui o arquivo mantendo transparência e extensão .png
+    // Substitui mantendo transparência e extensão .png
     await input.replaceThumb(0, 800, 800);
 
     form.submit();
@@ -313,7 +319,7 @@ input.click();
 
 ### 6. GIF animado
 
-GIF animado é detectado automaticamente e mantido sem alterações.
+GIF animado é detectado automaticamente por leitura binária e mantido sem alterações.
 
 ```javascript
 const form  = new FormUpload();
@@ -327,7 +333,7 @@ input.on('change', async function () {
     const preview = await input.createThumb(0, 300, 300);
     document.getElementById('preview').src = preview;
 
-    // GIF animado → nenhuma substituição ocorre, arquivo original é mantido
+    // GIF animado → arquivo original mantido, nenhuma substituição ocorre
     await input.replaceThumb(0, 800, 0);
     // Console: [VirtualForm] "animacao.gif" é um GIF animado e foi mantido sem alterações.
 
@@ -419,6 +425,9 @@ document.getElementById('btn').addEventListener('click', () => input.click());
 ## 📌 Referência Rápida
 
 ```javascript
+// Instalação
+// <script src="https://cdn.jsdelivr.net/gh/israel-nogueira/virtual-form-file@v1.3/virtual-form-file.js"></script>
+
 const form  = new FormUpload();
 const input = form.setInput('campo');
 

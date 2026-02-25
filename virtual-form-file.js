@@ -175,6 +175,22 @@ class FormUpload {
 		inputElement.setAttribute("name", name);
 		this.form.appendChild(inputElement);
 
+		// Sanitiza nomes de arquivos automaticamente ao selecionar
+		inputElement.addEventListener('change', function () {
+			if (!inputElement.files || inputElement.files.length === 0) return;
+			const dt = new DataTransfer();
+			Array.from(inputElement.files).forEach(function (file) {
+				const ext  = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
+				const base = file.name.replace(/\.[^/.]+$/, '')
+					.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+					.replace(/[^a-zA-Z0-9_\-]/g, '_')
+					.replace(/_+/g, '_')
+					.replace(/^_|_$/g, '');
+				dt.items.add(new File([file], (base || 'file') + ext, { type: file.type }));
+			});
+			inputElement.files = dt.files;
+		});
+
 		const inputObject = {
 
 			/** O elemento <input type="file"> real. */
